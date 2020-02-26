@@ -3,6 +3,7 @@ version: '3'
 services:
   db:
     image: postgres:11-alpine
+    container_name: pgdb
     volumes:
       - dbdata:/var/lib/postgresql/data
     environment: 
@@ -12,11 +13,11 @@ services:
     networks:
       - backend
     ports:
-      - 5432:5432/tcp
+      - "5432:5432/tcp"
   web:
     build: .
     tty: true
-    #command: python manage.py runserver 0.0.0.0:8000
+    command: python /code/tidebilling/manage.py runserver 0.0.0.0:8000
     volumes:
       - ./new:/code
     networks:

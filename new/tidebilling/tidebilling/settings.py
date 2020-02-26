@@ -79,7 +79,7 @@ DATABASES = {
         'NAME': 'tide',
         'USER': 'tidedbu',
         'PASSWORD':'mysecretpassword',
-        'HOST': '127.0.0.1',
+        'HOST': 'pgdb',
         'PORT': '5432',
     }
 }
