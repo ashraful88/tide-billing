@@ -15,6 +15,7 @@ services:
     ports:
       - "5432:5432/tcp"
   web:
+    container_name: tide_web
     build: .
     tty: true
     command: python /code/tidebilling/manage.py runserver 0.0.0.0:8000
