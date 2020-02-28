@@ -10,6 +10,7 @@ class Customer(models.Model):
     name = models.CharField(max_length=200)
     email = models.CharField(max_length=200, unique=True)
     phone = models.CharField(max_length=200)
+    landline = models.CharField(max_length=200, blank=True)
     note = models.TextField()
     #slug = models.SlugField(max_length=200, unique=True)
     status = models.BooleanField(default=True)
@@ -24,7 +25,9 @@ class CustomerContact(models.Model):
     name = models.CharField(max_length=200)
     email = models.CharField(max_length=200, unique=True)
     phone = models.CharField(max_length=200, unique=True)
-    customer = models.ForeignKey(Customer)
+    homephone = models.CharField(max_length=200, blank=True)
+    landline = models.CharField(max_length=200, blank=True)
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
     def __str__(self):

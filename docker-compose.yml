@@ -18,13 +18,19 @@ services:
     container_name: tide_web
     build: .
     tty: true
-    command: python /code/tidebilling/manage.py runserver 0.0.0.0:8000
+    #command: python /code/tidebilling/manage.py runserver 0.0.0.0:8000
     volumes:
       - ./new:/code
     networks:
       - backend
     ports:
       - "8000:8000"
+    environment:
+      - POSTGRES_PORT=5432
+      - POSTGRES_HOST=pgdb
+      - POSTGRES_DB=tide
+      - POSTGRES_USER=tidedbu
+      - POSTGRES_PASSWORD=mysecretpassword
     depends_on:
       - db
 
