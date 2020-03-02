@@ -1,10 +1,17 @@
 from django.contrib import admin
 
 # Register your models here.
-from .models import Customer
+from . import models
 
 class CustomerAdmin(admin.ModelAdmin):
-	list_display = ("id", "name", "email", "phone")
+	list_display = ("cus_id", "name", "email", "phone")
 	#prepopulated_fields = {"slug": ("name",)}
 
-admin.site.register(Customer, CustomerAdmin)
+class CustomerContactAdmin(admin.ModelAdmin):
+    list_display = ('id','name', 'email', 'phone')
+    #prepopulated_fields = {"slug": ("name",)}
+
+
+admin.site.register(models.CustomerContact, CustomerContactAdmin)
+admin.site.register(models.Customer, CustomerAdmin)
+

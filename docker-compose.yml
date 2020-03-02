@@ -19,6 +19,8 @@ services:
     build: .
     tty: true
     #command: python /code/tidebilling/manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "python /code/tidebilling/manage.py migrate && python /code/tidebilling/manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./new:/code
     networks:

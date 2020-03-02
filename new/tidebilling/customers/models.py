@@ -30,6 +30,15 @@ class CustomerContact(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE)
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
+    
     def __str__(self):
         return self.name
+
+    def __unicode__(self):
+        return self.name
+        
+    class Meta:
+        verbose_name = "Customers Contact"
+        verbose_name_plural = "Customers Contacts"
+
     
