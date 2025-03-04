@@ -1,5 +1,5 @@
-Django==3.1.14
+Django==4.2.18
 psycopg2==2.8.3
 pytz==2019.1
-sqlparse==0.3.0
 Pillow==10.3.0
+sqlparse==0.5.0
