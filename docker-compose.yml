@@ -2,7 +2,7 @@ version: '3'
 
 services:
   db:
-    image: postgres:11-alpine
+    image: postgres:17-alpine
     container_name: pgdb
     volumes:
       - dbdata:/var/lib/postgresql/data
@@ -20,7 +20,7 @@ services:
     tty: true
     #command: python /code/tidebilling/manage.py runserver 0.0.0.0:8000
     volumes:
-      - ./new:/code
+      - .:/code
     networks:
       - backend
     ports:
