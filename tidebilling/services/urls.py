@@ -1,4 +1,3 @@
-from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ServiceCategoryViewSet, ServiceViewSet, ServiceRequestViewSet,
@@ -13,6 +12,4 @@ router.register(r'deliverables', ServiceDeliverableViewSet)
 router.register(r'time-logs', TimeLogViewSet)
 router.register(r'feedback', ServiceFeedbackViewSet)
 
-urlpatterns = [
-    path('api/', include(router.urls)),
-]
+urlpatterns = router.urls

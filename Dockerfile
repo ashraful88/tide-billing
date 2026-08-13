@@ -30,8 +30,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project
 COPY . /code/
 
-# Create necessary directories
-RUN mkdir -p /code/staticfiles /code/media /code/logs
+# Create necessary directories.
+# /code/beat is where celery beat persists its schedule; it must exist (and be
+# owned by `app`) in the image so the named volume mounted over it inherits
+# that ownership rather than defaulting to root.
+RUN mkdir -p /code/staticfiles /code/media /code/logs /code/beat
 
 # Change ownership to app user
 RUN chown -R app:app /code
@@ -39,7 +42,11 @@ RUN chown -R app:app /code
 # Switch to app user
 USER app
 
-# Collect static files
+# Collect static files into the same location the runtime volume mounts, so the
+# build-time and run-time output agree.
+ENV STATIC_ROOT=/code/staticfiles \
+    MEDIA_ROOT=/code/media \
+    LOG_DIR=/code/logs
 RUN python tidebilling/manage.py collectstatic --noinput
 
 # Health check

@@ -1,8 +1,9 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+
+from tidebilling.permissions import IsBillingStaffOrReadOnly
 from django.utils import timezone
 
 from .models import SubscriptionPlan, Subscription, SubscriptionChange, SubscriptionUsage
@@ -15,7 +16,7 @@ from .serializers import (
 class SubscriptionPlanViewSet(viewsets.ModelViewSet):
     queryset = SubscriptionPlan.objects.all()
     serializer_class = SubscriptionPlanSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['is_active', 'is_featured', 'billing_frequency']
     search_fields = ['name', 'description']
@@ -32,7 +33,7 @@ class SubscriptionPlanViewSet(viewsets.ModelViewSet):
 
 class SubscriptionViewSet(viewsets.ModelViewSet):
     queryset = Subscription.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'plan', 'customer']
     search_fields = ['subscription_number', 'customer__name', 'plan__name']
@@ -83,12 +84,25 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         try:
             from .models import SubscriptionPlan
             new_plan = SubscriptionPlan.objects.get(id=new_plan_id)
-            subscription.upgrade_plan(new_plan)
-            serializer = self.get_serializer(subscription)
-            return Response(serializer.data)
         except SubscriptionPlan.DoesNotExist:
-            return Response({'detail': 'Plan not found.'}, 
+            return Response({'detail': 'Plan not found.'},
                           status=status.HTTP_404_NOT_FOUND)
+
+        change = subscription.change_plan(
+            new_plan,
+            user=request.user,
+            prorate=request.data.get('prorate', True),
+            reason=request.data.get('reason', ''),
+        )
+        data = self.get_serializer(subscription).data
+        # Surface what the mid-period switch costs or credits.
+        data['change'] = {
+            'change_type': change.change_type,
+            'old_price': str(change.old_price),
+            'new_price': str(change.new_price),
+            'proration_amount': str(change.proration_amount),
+        }
+        return Response(data)
 
     @action(detail=True, methods=['post'])
     def add_usage(self, request, pk=None):
@@ -127,7 +141,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 class SubscriptionChangeViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SubscriptionChange.objects.all()
     serializer_class = SubscriptionChangeSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['subscription', 'change_type']
     search_fields = ['subscription__subscription_number', 'reason']
@@ -138,7 +152,7 @@ class SubscriptionChangeViewSet(viewsets.ReadOnlyModelViewSet):
 class SubscriptionUsageViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SubscriptionUsage.objects.all()
     serializer_class = SubscriptionUsageSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['subscription', 'metric_name']
     search_fields = ['subscription__subscription_number', 'metric_name']

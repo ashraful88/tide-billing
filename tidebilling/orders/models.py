@@ -5,6 +5,7 @@ import uuid
 
 from customers.models import Customer
 from products.models import Product
+from tidebilling.money import ZERO, apply_tax, default_currency, default_tax_rate, money
 
 
 class OrderStatus(models.TextChoices):
@@ -26,11 +27,14 @@ class OrderType(models.TextChoices):
 class Order(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     order_number = models.CharField(max_length=50, unique=True)
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='orders')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
     order_type = models.CharField(max_length=20, choices=OrderType.choices, default=OrderType.ONE_TIME)
     status = models.CharField(max_length=20, choices=OrderStatus.choices, default=OrderStatus.PENDING)
     
-    # Pricing
+    # Pricing. currency/tax_rate are snapshotted so settings changes do not
+    # retroactively alter existing orders.
+    currency = models.CharField(max_length=3, default=default_currency)
+    tax_rate = models.DecimalField(max_digits=6, decimal_places=4, default=default_tax_rate)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -71,11 +75,18 @@ class Order(models.Model):
         super().save(*args, **kwargs)
 
     def calculate_totals(self):
-        """Calculate order totals based on order items"""
+        """Calculate order totals based on order items.
+
+        Tax is charged on the discounted subtotal: applying the discount after
+        tax (the previous behaviour) meant a discount never reduced the tax due.
+        """
         items = self.items.all()
-        self.subtotal = sum(item.total_price for item in items)
-        self.tax_amount = self.subtotal * Decimal('0.10')  # 10% tax
-        self.total_amount = self.subtotal + self.tax_amount + self.shipping_amount - self.discount_amount
+        self.subtotal = money(sum((item.total_price for item in items), ZERO))
+        taxable = max(ZERO, self.subtotal - money(self.discount_amount))
+        self.tax_amount = apply_tax(taxable, self.tax_rate)
+        self.total_amount = money(
+            taxable + self.tax_amount + money(self.shipping_amount)
+        )
         self.save()
 
 
@@ -95,6 +106,7 @@ class OrderItem(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
+        ordering = ['created_at']
         unique_together = ['order', 'product']
 
     def __str__(self):
@@ -107,7 +119,7 @@ class OrderItem(models.Model):
             self.product_name = self.product.title
         if not self.product_sku:
             self.product_sku = self.product.sku
-        self.total_price = self.unit_price * self.quantity
+        self.total_price = money(money(self.unit_price) * Decimal(self.quantity))
         super().save(*args, **kwargs)
 
 

@@ -25,11 +25,13 @@ class InvoiceSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     is_overdue = serializers.BooleanField(read_only=True)
+    is_finalized = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Invoice
         fields = '__all__'
-        read_only_fields = ('id', 'invoice_number', 'outstanding_amount', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'invoice_number', 'outstanding_amount', 'reminder_count',
+                           'last_reminder_at', 'created_at', 'updated_at')
 
     def create(self, validated_data):
         validated_data['created_by'] = self.context['request'].user
@@ -59,8 +61,10 @@ class InvoiceDetailSerializer(serializers.ModelSerializer):
     order = OrderSerializer(read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     is_overdue = serializers.BooleanField(read_only=True)
+    is_finalized = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Invoice
         fields = '__all__'
-        read_only_fields = ('id', 'invoice_number', 'outstanding_amount', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'invoice_number', 'outstanding_amount', 'reminder_count',
+                           'last_reminder_at', 'created_at', 'updated_at')
