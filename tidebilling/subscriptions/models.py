@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from customers.models import Customer
 from products.models import Product
+from tidebilling.money import ZERO, money
 
 
 class SubscriptionStatus(models.TextChoices):
@@ -67,22 +68,29 @@ class SubscriptionPlan(models.Model):
 
     @property
     def monthly_price(self):
-        """Convert price to monthly equivalent for comparison"""
+        """Convert price to monthly equivalent for comparison.
+
+        Multipliers must be Decimal: `Decimal * float` raises TypeError, which
+        would surface as a 500 from any endpoint serialising this field.
+        """
         frequency_multipliers = {
-            BillingFrequency.DAILY: 30,
-            BillingFrequency.WEEKLY: 4.33,
-            BillingFrequency.MONTHLY: 1,
-            BillingFrequency.QUARTERLY: 1/3,
-            BillingFrequency.SEMI_ANNUALLY: 1/6,
-            BillingFrequency.ANNUALLY: 1/12,
+            BillingFrequency.DAILY: Decimal('30'),
+            BillingFrequency.WEEKLY: Decimal('4.33'),
+            BillingFrequency.MONTHLY: Decimal('1'),
+            BillingFrequency.QUARTERLY: Decimal('1') / Decimal('3'),
+            BillingFrequency.SEMI_ANNUALLY: Decimal('1') / Decimal('6'),
+            BillingFrequency.ANNUALLY: Decimal('1') / Decimal('12'),
         }
-        return self.price * frequency_multipliers.get(self.billing_frequency, 1)
+        multiplier = frequency_multipliers.get(
+            self.billing_frequency, Decimal('1')
+        )
+        return self.price * multiplier
 
 
 class Subscription(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     subscription_number = models.CharField(max_length=50, unique=True)
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='subscriptions')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='subscriptions')
     plan = models.ForeignKey(SubscriptionPlan, on_delete=models.PROTECT)
     
     # Status and dates
@@ -193,23 +201,89 @@ class Subscription(models.Model):
             self.end_date = None
             self.save()
 
-    def upgrade_plan(self, new_plan):
-        """Upgrade subscription to a new plan"""
+    def unused_period_fraction(self, at=None):
+        """Fraction of the current billing period still unused, as a Decimal.
+
+        Returns 0 outside the period rather than a negative value, so callers
+        never produce a proration that charges backwards.
+        """
+        at = at or timezone.now()
+        period = self.current_period_end - self.current_period_start
+        total_seconds = Decimal(str(period.total_seconds()))
+        if total_seconds <= 0:
+            return ZERO
+        remaining = Decimal(str((self.current_period_end - at).total_seconds()))
+        if remaining <= 0:
+            return ZERO
+        return min(Decimal('1'), remaining / total_seconds)
+
+    def change_plan(self, new_plan, user=None, prorate=True, reason=''):
+        """Move to a new plan, recording proration for the unused period.
+
+        The customer is credited for the unused remainder of the plan they are
+        leaving and charged pro rata for the plan they are joining. The net
+        figure lands on the SubscriptionChange row so the next invoice can pick
+        it up; the billing period itself is deliberately left intact.
+        """
         old_plan = self.plan
+        # Capture the old price before reassigning it, otherwise the audit row
+        # records the new price in both columns.
+        old_price = money(self.price)
+        new_price = money(new_plan.price)
+
+        proration = ZERO
+        if prorate:
+            fraction = self.unused_period_fraction()
+            credit = money(old_price * fraction)
+            charge = money(new_price * fraction)
+            proration = money(charge - credit)
+
+        if new_plan.monthly_price > old_plan.monthly_price:
+            change_type = 'plan_upgrade'
+        elif new_plan.monthly_price < old_plan.monthly_price:
+            change_type = 'plan_downgrade'
+        else:
+            change_type = 'price_change'
+
         self.plan = new_plan
-        self.price = new_plan.price
-        
-        # Create subscription change record
-        SubscriptionChange.objects.create(
+        self.price = new_price
+        self.save()
+
+        return SubscriptionChange.objects.create(
             subscription=self,
-            change_type='plan_upgrade',
+            change_type=change_type,
             old_plan=old_plan,
             new_plan=new_plan,
-            old_price=self.price,
-            new_price=new_plan.price
+            old_price=old_price,
+            new_price=new_price,
+            proration_amount=proration,
+            reason=reason,
+            created_by=user,
         )
-        
+
+    def upgrade_plan(self, new_plan, user=None, prorate=True):
+        """Backwards-compatible alias for change_plan."""
+        return self.change_plan(new_plan, user=user, prorate=prorate)
+
+    def expire_if_period_ended(self, at=None):
+        """Complete a cancel-at-period-end request once the period is over.
+
+        Without this the flag was set and then never acted on: the renewal task
+        skipped these subscriptions, so they simply stayed ACTIVE forever.
+        """
+        at = at or timezone.now()
+        if not self.cancel_at_period_end:
+            return False
+        if self.status != SubscriptionStatus.ACTIVE:
+            return False
+        if self.current_period_end > at:
+            return False
+
+        self.status = SubscriptionStatus.CANCELLED
+        self.end_date = self.current_period_end
         self.save()
+        return True
+
 
     def add_usage(self, metric, amount):
         """Add usage for a specific metric"""
@@ -240,6 +314,14 @@ class SubscriptionChange(models.Model):
     # Price changes
     old_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     new_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    # Net proration for the unused remainder of the period: positive means the
+    # customer owes the difference, negative means they are owed a credit.
+    proration_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal('0.00')
+    )
+    # Cleared once the amount has been carried onto a renewal invoice, so a
+    # mid-period change is billed exactly once.
+    proration_invoiced = models.BooleanField(default=False)
     
     # Status changes
     old_status = models.CharField(max_length=20, blank=True)

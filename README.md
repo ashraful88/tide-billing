@@ -9,7 +9,7 @@ A comprehensive, production-ready billing and subscription management system bui
 - **Product Catalog**: Products with categories, subcategories, tags, and inventory management
 - **Order Processing**: Full order lifecycle from creation to fulfillment
 - **Invoice Management**: Automated invoice generation, recurring billing, and payment tracking
-- **Payment Processing**: Multiple payment gateways (Stripe, PayPal) with stored payment methods
+- **Payment Recording**: Cash/manual payment recording with refunds that settle back to the invoice
 - **Subscription Management**: Flexible subscription plans with trial periods and usage tracking
 - **Service Management**: Professional service requests with time tracking and deliverables
 
@@ -44,13 +44,12 @@ A comprehensive, production-ready billing and subscription management system bui
 
 ## 🔧 Technology Stack
 
-- **Backend**: Django 5.2.2 + Django REST Framework
+- **Backend**: Django 5.2 LTS + Django REST Framework
 - **Database**: PostgreSQL 15
 - **Cache/Queue**: Redis 7
 - **Task Queue**: Celery
 - **Web Server**: Nginx + Gunicorn
 - **Containerization**: Docker + Docker Compose
-- **Payment Processing**: Stripe, PayPal
 - **API Documentation**: OpenAPI/Swagger
 
 ## 📋 Prerequisites
@@ -59,7 +58,6 @@ A comprehensive, production-ready billing and subscription management system bui
 - Git
 - Domain name (for production)
 - SSL certificate (for production)
-- Payment gateway accounts (Stripe, PayPal)
 
 ## 🚀 Quick Start (Development)
 
@@ -83,6 +81,7 @@ A comprehensive, production-ready billing and subscription management system bui
 4. **Run migrations and create superuser**
    ```bash
    docker-compose exec web python tidebilling/manage.py migrate
+   docker-compose exec web python tidebilling/manage.py setup_roles
    docker-compose exec web python tidebilling/manage.py createsuperuser
    ```
 
@@ -134,6 +133,7 @@ chmod +x deploy.sh
 4. **Run initial setup**
    ```bash
    docker-compose exec web python tidebilling/manage.py migrate
+   docker-compose exec web python tidebilling/manage.py setup_roles
    docker-compose exec web python tidebilling/manage.py collectstatic --noinput
    docker-compose exec web python tidebilling/manage.py createsuperuser
    ```
@@ -161,26 +161,18 @@ EMAIL_HOST=smtp.gmail.com
 EMAIL_HOST_USER=your-email@gmail.com
 EMAIL_HOST_PASSWORD=your-app-password
 
-# Payment Gateways
-STRIPE_SECRET_KEY=sk_live_your_stripe_key
-PAYPAL_CLIENT_ID=your_paypal_client_id
-
 # Business Settings
-CURRENCY_CODE=USD
-TAX_RATE=0.10
+CURRENCY_CODE=USD          # snapshotted onto each order/invoice
+TAX_RATE=0.10              # snapshotted; changing it never alters issued invoices
+DEFAULT_FROM_EMAIL=noreply@your-domain.com
 ```
 
-### Payment Gateway Setup
+### Payments
 
-#### Stripe
-1. Create account at https://stripe.com
-2. Get API keys from dashboard
-3. Set `STRIPE_PUBLISHABLE_KEY` and `STRIPE_SECRET_KEY`
-
-#### PayPal
-1. Create developer account at https://developer.paypal.com
-2. Create application and get credentials
-3. Set `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`
+The system is **cash-only**: payments are recorded by staff, not charged
+through a gateway. The `STRIPE_*` / `PAYPAL_*` settings and the gateway fields
+on `Payment` are unused scaffolding kept for a future integration. Adding a
+gateway would also require inbound webhooks to reconcile async events.
 
 ## 📊 API Documentation
 
@@ -201,39 +193,141 @@ curl -X POST http://localhost:8000/api/auth/token/ \
 
 # Use token in requests
 curl -H "Authorization: Token your-token-here" \
-  http://localhost:8000/api/v1/customers/
+  http://localhost:8000/api/v1/customers/customers/
 ```
 
 ### Key Endpoints
 
+Routes are `/api/v1/<app>/<resource>/`. The app segment is load-bearing: both
+`products` and `services` register a `categories` resource, so a flat
+`/api/v1/<resource>/` scheme would make one of them unreachable.
+
 ```
 # Customers
-GET/POST   /api/v1/customers/
-GET/PUT    /api/v1/customers/{id}/
+GET/POST   /api/v1/customers/customers/
+GET/PUT    /api/v1/customers/customers/{id}/
+GET        /api/v1/customers/customers/{id}/contacts/
+GET        /api/v1/customers/customers/search/?q=
+GET/POST   /api/v1/customers/contacts/
 
 # Products
-GET/POST   /api/v1/products/
-GET/PUT    /api/v1/products/{id}/
+GET/POST   /api/v1/products/products/
+GET/PUT    /api/v1/products/products/{id}/
+GET        /api/v1/products/products/low_stock/?threshold=
+POST       /api/v1/products/products/{id}/update_stock/
+GET/POST   /api/v1/products/categories/
+GET/POST   /api/v1/products/subcategories/
+GET/POST   /api/v1/products/tags/
 
 # Orders
-GET/POST   /api/v1/orders/
-POST       /api/v1/orders/{id}/add_item/
-POST       /api/v1/orders/{id}/update_status/
+GET/POST   /api/v1/orders/orders/
+POST       /api/v1/orders/orders/{id}/add_item/
+POST       /api/v1/orders/orders/{id}/update_status/
+GET        /api/v1/orders/orders/{id}/items/
+GET/POST   /api/v1/orders/order-items/
 
 # Invoices
-GET/POST   /api/v1/invoices/
-GET        /api/v1/invoices/overdue/
-POST       /api/v1/invoices/{id}/send/
+GET/POST   /api/v1/invoices/invoices/
+GET        /api/v1/invoices/invoices/overdue/
+GET        /api/v1/invoices/invoices/due_soon/?days=
+POST       /api/v1/invoices/invoices/{id}/send/
+POST       /api/v1/invoices/invoices/{id}/add_item/
+GET/POST   /api/v1/invoices/invoice-items/
 
 # Payments
-GET/POST   /api/v1/payments/
-POST       /api/v1/payments/{id}/mark_completed/
+GET/POST   /api/v1/payments/payments/
+POST       /api/v1/payments/payments/{id}/mark_completed/
+POST       /api/v1/payments/payments/{id}/mark_failed/
+POST       /api/v1/payments/payments/{id}/create_refund/
+GET/POST   /api/v1/payments/refunds/
+GET/POST   /api/v1/payments/payment-methods/
 
 # Subscriptions
-GET/POST   /api/v1/subscriptions/
-POST       /api/v1/subscriptions/{id}/cancel/
-POST       /api/v1/subscriptions/{id}/upgrade/
+GET/POST   /api/v1/subscriptions/subscriptions/
+POST       /api/v1/subscriptions/subscriptions/{id}/cancel/
+POST       /api/v1/subscriptions/subscriptions/{id}/reactivate/
+POST       /api/v1/subscriptions/subscriptions/{id}/upgrade/
+POST       /api/v1/subscriptions/subscriptions/{id}/add_usage/
+GET        /api/v1/subscriptions/subscriptions/expiring_soon/?days=
+GET/POST   /api/v1/subscriptions/plans/
+GET        /api/v1/subscriptions/plans/active/
+GET        /api/v1/subscriptions/changes/          # read-only
+GET        /api/v1/subscriptions/usage/            # read-only
+
+# Services
+GET/POST   /api/v1/services/requests/
+POST       /api/v1/services/requests/{id}/assign/
+POST       /api/v1/services/requests/{id}/update_status/
+GET/POST   /api/v1/services/services/
+GET/POST   /api/v1/services/categories/
+GET/POST   /api/v1/services/deliverables/
+POST       /api/v1/services/deliverables/{id}/mark_completed/
+GET/POST   /api/v1/services/time-logs/
+GET/POST   /api/v1/services/feedback/
+
+# Health check (unauthenticated)
+GET        /health/
 ```
+
+### New billing endpoints
+
+```
+# Compliance / corrections
+POST       /api/v1/invoices/invoices/{id}/cancel/          # records reason in history
+POST       /api/v1/invoices/invoices/{id}/credit_note/     # {amount, reason}
+GET        /api/v1/invoices/invoices/{id}/history/         # audit trail
+GET        /api/v1/invoices/invoices/{id}/pdf/             # PDF download
+GET        /api/v1/invoices/invoices/aging/                # AR aging buckets
+
+# Order -> Invoice -> Payment
+POST       /api/v1/orders/orders/{id}/generate_invoice/    # idempotent
+
+# Refunds actually settle
+POST       /api/v1/payments/payments/{id}/create_refund/   # creates it pending
+POST       /api/v1/payments/refunds/{id}/complete/         # settles vs invoice
+
+# Customers
+POST       /api/v1/customers/customers/{id}/archive/
+POST       /api/v1/customers/customers/{id}/unarchive/
+GET        /api/v1/customers/customers/{id}/statement/
+DELETE     /api/v1/customers/customers/{id}/               # archives if history exists
+```
+
+### Roles
+
+Access is staff-only and role-based. Provision the groups once with
+`manage.py setup_roles` (compose and `deploy.sh` run it automatically), then
+add each user to a group:
+
+| Role | Read | Create/Edit | Delete |
+|------|------|-------------|--------|
+| `admin` | yes | yes | yes |
+| `billing` | yes | yes | no |
+| `readonly` | yes | no | no |
+
+A user in no role group is read-only. Issued invoices cannot be edited or
+deleted by anyone — cancel them or issue a credit note.
+
+## ✅ Tests
+
+```bash
+# On the host, no services needed (SQLite, eager Celery, locmem email)
+python tidebilling/manage.py test --settings=tidebilling.settings_test
+
+# Against the compose PostgreSQL
+TEST_DATABASE=postgres python tidebilling/manage.py test --settings=tidebilling.settings_test
+
+# Inside the container
+docker compose exec -e TEST_DATABASE=postgres web \
+  python tidebilling/manage.py test --settings=tidebilling.settings_test
+
+# A single app or test
+python tidebilling/manage.py test orders --settings=tidebilling.settings_test
+```
+
+`--settings=tidebilling.settings_test` is required even in the container: the
+containers run `ENVIRONMENT=production`, which enables `SECURE_SSL_REDIRECT`,
+and API tests would receive 301s.
 
 ## 🔄 Background Tasks
 

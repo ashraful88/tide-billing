@@ -52,6 +52,9 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    # The project package itself, so its project-level management commands
+    # (setup_roles) are discovered. It has no models of its own.
+    'tidebilling',
     'customers',
     'products',
     'invoices',
@@ -142,8 +145,6 @@ TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
-USE_L10N = True
-
 USE_TZ = True
 
 
@@ -151,16 +152,32 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
 
-# WhiteNoise configuration
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# Configurable for the same reason as LOG_DIR: BASE_DIR is mounted read-only in
+# the containers, and the static/media volumes are mounted at /code/staticfiles
+# and /code/media. Defaults keep host-side development unchanged.
+STATIC_ROOT = Path(os.environ.get('STATIC_ROOT', BASE_DIR / 'staticfiles'))
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT', BASE_DIR / 'media'))
+
+# WhiteNoise configuration.
+# Django 5.1 removed STATICFILES_STORAGE in favour of STORAGES; setting the old
+# name is silently ignored, which would leave static files unhashed/uncompressed.
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Discovery starts in BASE_DIR rather than the cwd, because manage.py is run
+# from the repo root as `python tidebilling/manage.py`.
+TEST_RUNNER = 'tidebilling.testrunner.ProjectTestRunner'
 
 # REST Framework configuration
 REST_FRAMEWORK = {
@@ -203,7 +220,10 @@ if ENVIRONMENT == 'production':
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SECURE_HSTS_SECONDS = 31536000
-    SECURE_REDIRECT_EXEMPT = []
+    # The container/nginx probes hit http://localhost:8000/health/ directly.
+    # Without this exemption they get a 301 to https, which `curl -f` treats as
+    # success -- so the health check would pass even with the database down.
+    SECURE_REDIRECT_EXEMPT = [r'^health/$']
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -215,7 +235,20 @@ SESSION_COOKIE_AGE = 86400  # 24 hours
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_SAVE_EVERY_REQUEST = True
 
-# Logging Configuration
+# Logging Configuration.
+# LOG_DIR is configurable because BASE_DIR is mounted read-only in the
+# containers; writing the log file there fails at startup. If the directory
+# cannot be created (read-only mount, missing permissions) the file handler is
+# dropped rather than taking the whole process down.
+LOG_DIR = Path(os.environ.get('LOG_DIR', BASE_DIR / 'logs'))
+try:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    _log_to_file = os.access(LOG_DIR, os.W_OK)
+except OSError:
+    _log_to_file = False
+
+_LOG_HANDLERS = ['console', 'file'] if _log_to_file else ['console']
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -233,7 +266,7 @@ LOGGING = {
         'file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'django.log',
+            'filename': LOG_DIR / 'django.log',
             'formatter': 'verbose',
         },
         'console': {
@@ -243,30 +276,36 @@ LOGGING = {
         },
     },
     'root': {
-        'handlers': ['console', 'file'],
+        'handlers': _LOG_HANDLERS,
         'level': 'INFO',
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file'],
+            'handlers': _LOG_HANDLERS,
             'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
             'propagate': False,
         },
     },
 }
 
-# Create logs directory
-os.makedirs(BASE_DIR / 'logs', exist_ok=True)
+if not _log_to_file:
+    LOGGING['handlers'].pop('file', None)
 
 # Email Configuration
 EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+
+# Defined unconditionally: billing emails read this, and Django's own fallback
+# is 'webmaster@localhost', which is not a usable sender for customer mail.
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@tidebilling.com')
+SERVER_EMAIL = os.environ.get('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
+
 if EMAIL_BACKEND == 'django.core.mail.backends.smtp.EmailBackend':
     EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
     EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
     EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ['true', '1', 'on']
     EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
     EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-    DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+    DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or DEFAULT_FROM_EMAIL)
 
 # Cache Configuration
 CACHES = {

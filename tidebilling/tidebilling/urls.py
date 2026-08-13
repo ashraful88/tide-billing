@@ -20,6 +20,8 @@ from django.conf.urls.static import static
 from rest_framework.authtoken.views import obtain_auth_token
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
+from .views import health_check
+
 # API v1 URLs
 api_v1_patterns = [
     path('customers/', include('customers.urls')),
@@ -47,7 +49,7 @@ urlpatterns = [
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     
     # Health check
-    path('health/', include('django.contrib.admindocs.urls')),
+    path('health/', health_check, name='health-check'),
 ]
 
 # Serve media files in development

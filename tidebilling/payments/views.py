@@ -1,21 +1,28 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
-from decimal import Decimal
+from django.core.exceptions import ValidationError
+from decimal import Decimal, InvalidOperation
 
-from .models import Payment, Refund, StoredPaymentMethod
+from tidebilling.permissions import IsBillingStaffOrReadOnly
+
+from .models import Payment, PaymentStateError, PaymentStatus, Refund, StoredPaymentMethod
 from .serializers import (
     PaymentSerializer, RefundSerializer, StoredPaymentMethodSerializer,
     PaymentListSerializer, PaymentDetailSerializer
 )
 
 
+def _validation_error_response(exc):
+    detail = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+    return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class StoredPaymentMethodViewSet(viewsets.ModelViewSet):
     queryset = StoredPaymentMethod.objects.all()
     serializer_class = StoredPaymentMethodSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['customer', 'type', 'is_active', 'is_default']
     search_fields = ['customer__name', 'card_brand']
@@ -25,7 +32,7 @@ class StoredPaymentMethodViewSet(viewsets.ModelViewSet):
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'payment_method', 'payment_gateway', 'customer', 'invoice']
     search_fields = ['payment_reference', 'customer__name', 'invoice__invoice_number']
@@ -43,12 +50,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def mark_completed(self, request, pk=None):
         """Mark payment as completed"""
         payment = self.get_object()
-        
-        if payment.status != 'pending':
-            return Response({'detail': 'Only pending payments can be marked as completed.'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
-        
-        payment.mark_as_completed()
+
+        try:
+            payment.mark_as_completed(user=request.user)
+        except PaymentStateError as exc:
+            return _validation_error_response(exc)
+
         serializer = self.get_serializer(payment)
         return Response(serializer.data)
 
@@ -57,38 +64,55 @@ class PaymentViewSet(viewsets.ModelViewSet):
         """Mark payment as failed"""
         payment = self.get_object()
         reason = request.data.get('reason', '')
-        
-        payment.mark_as_failed(reason)
+
+        try:
+            payment.mark_as_failed(reason, user=request.user)
+        except PaymentStateError as exc:
+            return _validation_error_response(exc)
+
         serializer = self.get_serializer(payment)
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'])
     def create_refund(self, request, pk=None):
-        """Create a refund for this payment"""
+        """Create a refund for this payment.
+
+        Created pending; call refunds/{id}/complete to settle it against the
+        invoice.
+        """
         payment = self.get_object()
         amount = request.data.get('amount')
         reason = request.data.get('reason', '')
-        
+
         if not amount:
-            return Response({'detail': 'Amount is required.'}, 
+            return Response({'detail': 'Amount is required.'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
+
         try:
             amount = Decimal(str(amount))
             if amount <= 0 or amount > payment.amount:
-                return Response({'detail': 'Invalid refund amount.'}, 
+                return Response({'detail': 'Invalid refund amount.'},
                               status=status.HTTP_400_BAD_REQUEST)
-        except (ValueError, TypeError):
-            return Response({'detail': 'Invalid amount format.'}, 
+        except (InvalidOperation, ValueError, TypeError):
+            # Decimal('abc') raises decimal.InvalidOperation, which is an
+            # ArithmeticError rather than a ValueError, so it must be listed
+            # explicitly or a non-numeric amount escapes as a 500.
+            return Response({'detail': 'Invalid amount format.'},
                           status=status.HTTP_400_BAD_REQUEST)
-        
-        refund = Refund.objects.create(
+
+        refund = Refund(
             payment=payment,
             amount=amount,
             reason=reason,
-            processed_by=request.user
+            processed_by=request.user,
         )
-        
+        try:
+            # Enforces the cumulative cap across all refunds on this payment.
+            refund.full_clean(exclude=['refund_reference'])
+        except ValidationError as exc:
+            return _validation_error_response(exc)
+        refund.save()
+
         serializer = RefundSerializer(refund)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -96,9 +120,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
 class RefundViewSet(viewsets.ModelViewSet):
     queryset = Refund.objects.all()
     serializer_class = RefundSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'payment__customer']
     search_fields = ['refund_reference', 'payment__payment_reference', 'reason']
     ordering_fields = ['refund_date', 'amount', 'created_at']
     ordering = ['-refund_date']
+
+    @action(detail=True, methods=['post'])
+    def complete(self, request, pk=None):
+        """Settle the refund against its payment and invoice."""
+        refund = self.get_object()
+        try:
+            refund.mark_as_completed(user=request.user)
+        except PaymentStateError as exc:
+            return _validation_error_response(exc)
+        return Response(self.get_serializer(refund).data)

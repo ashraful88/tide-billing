@@ -1,8 +1,9 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+
+from tidebilling.permissions import IsBillingStaffOrReadOnly
 from django.utils import timezone
 
 from .models import (
@@ -19,7 +20,7 @@ from .serializers import (
 class ServiceCategoryViewSet(viewsets.ModelViewSet):
     queryset = ServiceCategory.objects.all()
     serializer_class = ServiceCategorySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['is_active']
     search_fields = ['name', 'description']
@@ -30,7 +31,7 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
 class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['is_active', 'is_featured', 'category', 'billing_frequency']
     search_fields = ['name', 'description']
@@ -47,7 +48,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
 
 class ServiceRequestViewSet(viewsets.ModelViewSet):
     queryset = ServiceRequest.objects.all()
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'priority', 'customer', 'service', 'assigned_to']
     search_fields = ['request_number', 'title', 'description', 'customer__name']
@@ -126,7 +127,7 @@ class ServiceRequestViewSet(viewsets.ModelViewSet):
 class ServiceDeliverableViewSet(viewsets.ModelViewSet):
     queryset = ServiceDeliverable.objects.all()
     serializer_class = ServiceDeliverableSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['service_request', 'is_completed']
     search_fields = ['title', 'description']
@@ -148,7 +149,7 @@ class ServiceDeliverableViewSet(viewsets.ModelViewSet):
 class TimeLogViewSet(viewsets.ModelViewSet):
     queryset = TimeLog.objects.all()
     serializer_class = TimeLogSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['service_request', 'user', 'is_billable']
     search_fields = ['description', 'service_request__title']
@@ -162,7 +163,7 @@ class TimeLogViewSet(viewsets.ModelViewSet):
 class ServiceFeedbackViewSet(viewsets.ModelViewSet):
     queryset = ServiceFeedback.objects.all()
     serializer_class = ServiceFeedbackSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsBillingStaffOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['service_request', 'overall_rating', 'would_recommend']
     search_fields = ['positive_feedback', 'improvement_suggestions']

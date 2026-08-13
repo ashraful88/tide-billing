@@ -37,7 +37,10 @@ class TimeLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = TimeLog
         fields = '__all__'
-        read_only_fields = ('id', 'hours', 'created_at', 'updated_at')
+        # `user` is set by TimeLogViewSet.perform_create from the request; as a
+        # writable field it was both required (blocking creation) and a way to
+        # log time against another user.
+        read_only_fields = ('id', 'hours', 'user', 'created_at', 'updated_at')
 
 
 class ServiceFeedbackSerializer(serializers.ModelSerializer):

@@ -24,9 +24,27 @@ app.conf.beat_schedule = {
         'task': 'invoices.tasks.send_invoice_reminders',
         'schedule': 86400.0,  # Run daily
     },
+    'mark-overdue-invoices': {
+        'task': 'invoices.tasks.mark_overdue_invoices',
+        'schedule': 86400.0,  # Run daily
+    },
     'process-subscription-renewals': {
         'task': 'subscriptions.tasks.process_subscription_renewals',
         'schedule': 3600.0,  # Run every hour
+    },
+    # These three existed as tasks but were never scheduled, so trials never
+    # converted and period-end cancellations never completed.
+    'check-trial-expirations': {
+        'task': 'subscriptions.tasks.check_trial_expirations',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'expire-period-end-cancellations': {
+        'task': 'subscriptions.tasks.expire_period_end_cancellations',
+        'schedule': 3600.0,  # Run every hour
+    },
+    'send-subscription-expiry-warnings': {
+        'task': 'subscriptions.tasks.send_subscription_expiry_warnings',
+        'schedule': 86400.0,  # Run daily
     },
     'cleanup-expired-sessions': {
         'task': 'tidebilling.tasks.cleanup_expired_sessions',

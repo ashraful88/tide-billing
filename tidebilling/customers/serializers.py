@@ -6,7 +6,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Customer
         fields = '__all__'
-        read_only_fields = ('id', 'created', 'modified')
+        read_only_fields = ('id', 'is_archived', 'archived_at', 'created', 'modified')
 
     def validate_email(self, value):
         if Customer.objects.filter(email=value).exclude(pk=self.instance.pk if self.instance else None).exists():

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
@@ -48,7 +46,7 @@ services:
       - ./tidebilling:/code/tidebilling:ro
       - static_volume:/code/staticfiles
       - media_volume:/code/media
-      - ./logs:/code/logs
+      - logs_volume:/code/logs
     networks:
       - backend
     ports:
@@ -64,7 +62,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
       REDIS_URL: redis://redis:6379/1
       CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_DIR: /code/logs
+      STATIC_ROOT: /code/staticfiles
+      MEDIA_ROOT: /code/media
     depends_on:
       db:
         condition: service_healthy
@@ -72,6 +74,7 @@ services:
         condition: service_healthy
     command: >
       sh -c "python tidebilling/manage.py migrate &&
+             python tidebilling/manage.py setup_roles &&
              python tidebilling/manage.py collectstatic --noinput &&
              gunicorn --chdir tidebilling --bind 0.0.0.0:8000 --workers 3 tidebilling.wsgi:application"
 
@@ -83,7 +86,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./tidebilling:/code/tidebilling:ro
-      - ./logs:/code/logs
+      - logs_volume:/code/logs
     networks:
       - backend
     environment:
@@ -96,13 +99,55 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
       REDIS_URL: redis://redis:6379/1
       CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_DIR: /code/logs
+      STATIC_ROOT: /code/staticfiles
+      MEDIA_ROOT: /code/media
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A tidebilling worker --loglevel=info
+    healthcheck:
+      disable: true
+    command: celery --workdir=/code/tidebilling -A tidebilling worker --loglevel=info
+
+  celery-beat:
+    container_name: tide_celery_beat
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - ./tidebilling:/code/tidebilling:ro
+      - logs_volume:/code/logs
+      - celery_beat_data:/code/beat
+    networks:
+      - backend
+    environment:
+      DEBUG: ${DEBUG:-False}
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-here}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-tide}
+      POSTGRES_USER: ${POSTGRES_USER:-tidedbu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
+      REDIS_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      LOG_DIR: /code/logs
+      STATIC_ROOT: /code/staticfiles
+      MEDIA_ROOT: /code/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    command: celery --workdir=/code/tidebilling -A tidebilling beat --loglevel=info --schedule /code/beat/celerybeat-schedule
 
   nginx:
     image: nginx:alpine
@@ -128,6 +173,10 @@ volumes:
   static_volume:
     driver: local
   media_volume:
+    driver: local
+  celery_beat_data:
+    driver: local
+  logs_volume:
     driver: local
 
 networks: 

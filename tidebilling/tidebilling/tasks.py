@@ -2,6 +2,8 @@ from celery import shared_task
 from django.contrib.sessions.models import Session
 from django.utils import timezone
 
+from tidebilling.money import money
+
 
 @shared_task
 def cleanup_expired_sessions():
@@ -42,12 +44,15 @@ def generate_monthly_reports():
             status='completed'
         ).aggregate(total=Sum('amount'))['total'] or 0
         
-        print(f"Monthly Report - Invoiced: ${total_invoiced}, Paid: ${total_paid}")
-        
+        print(f"Monthly Report - Invoiced: {total_invoiced}, Paid: {total_paid}")
+
+        # Serialised as strings, not floats: float() on a money Decimal
+        # reintroduces binary rounding error into the figures being reported.
         return {
             'period': f"{first_day_last_month} to {last_day_last_month}",
-            'total_invoiced': float(total_invoiced),
-            'total_paid': float(total_paid)
+            'total_invoiced': str(money(total_invoiced)),
+            'total_paid': str(money(total_paid)),
+            'total_outstanding': str(money(total_invoiced - total_paid)),
         }
         
     except Exception as e:

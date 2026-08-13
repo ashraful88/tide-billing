@@ -21,7 +21,7 @@ class SubscriptionChangeSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionChange
         fields = '__all__'
-        read_only_fields = ('id', 'created_at')
+        read_only_fields = ('id', 'proration_amount', 'proration_invoiced', 'created_at')
 
 
 class SubscriptionUsageSerializer(serializers.ModelSerializer):

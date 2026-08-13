@@ -85,7 +85,7 @@ class ServiceRequest(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     request_number = models.CharField(max_length=50, unique=True)
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='service_requests')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='service_requests')
     service = models.ForeignKey(Service, on_delete=models.CASCADE)
     
     # Request details
@@ -198,7 +198,9 @@ class TimeLog(models.Model):
         if self.start_time and self.end_time and not self.hours:
             # Calculate hours from start and end time
             duration = self.end_time - self.start_time
-            self.hours = Decimal(str(duration.total_seconds() / 3600))
+            self.hours = (
+                Decimal(str(duration.total_seconds())) / Decimal('3600')
+            ).quantize(Decimal('0.01'))
         super().save(*args, **kwargs)
 
 

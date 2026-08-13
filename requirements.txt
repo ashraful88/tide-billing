@@ -1,51 +1,56 @@
 # Core Django
-asgiref==3.8.1
-Django==5.2.11
-sqlparse==0.5.3
-pytz==2025.2
+# Pinned to the 5.2 LTS line (security support through April 2028). Every
+# dependency below publishes official support for 5.2; Django 6.x would push
+# django-extensions and django-redis outside their tested range.
+asgiref==3.12.1
+Django==5.2.17
+sqlparse==0.5.5
 
 # Database
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.12
 
 # API Framework
-djangorestframework==3.15.2
-django-cors-headers==4.6.0
-django-filter==24.3
+djangorestframework==3.18.0
+django-cors-headers==4.9.0
+django-filter==26.1
 
 # Authentication & Security
 djangorestframework-simplejwt==5.5.1
 
 # File handling
-Pillow==11.3.0
-whitenoise==6.8.2
+Pillow==12.3.0
+whitenoise==6.12.0
 
 # Caching & Async Tasks
-redis==5.2.0
-django-redis==5.4.0
-celery==5.4.0
+redis==8.1.0
+django-redis==7.0.0
+celery==5.6.3
 
 # Payment Processing
-stripe==11.1.1
+stripe==15.5.0
 
 # Environment & Utilities
 python-decouple==3.8
-django-extensions==3.2.3
+django-extensions==4.1
 
 # Development & Testing (optional)
-django-debug-toolbar==4.4.6
+django-debug-toolbar==7.1.0
 
 # Data validation
-django-phonenumber-field==8.0.0
-phonenumbers==8.13.50
+django-phonenumber-field==8.5.0
+phonenumbers==9.0.36
 
 # Monitoring & Logging
-sentry-sdk==2.17.0
+sentry-sdk==2.67.1
 
 # Documentation
-drf-spectacular==0.28.0
+drf-spectacular==0.30.0
+
+# Invoice PDF rendering (pure Python; no system libraries needed)
+reportlab==4.4.4
 
 # Production server
-gunicorn==22.0.0
+gunicorn==26.0.0
 
 # Utils
-packaging==25.0
+packaging==26.3

@@ -109,8 +109,17 @@ run_migrations() {
     print_status "Running database migrations..."
     
     docker-compose exec -T web python tidebilling/manage.py migrate
-    
+
     print_status "Migrations completed ✓"
+}
+
+# Provision the admin/billing/readonly role groups (idempotent)
+setup_roles() {
+    print_status "Setting up role groups..."
+
+    docker-compose exec -T web python tidebilling/manage.py setup_roles
+
+    print_status "Role groups ready ✓"
 }
 
 # Create superuser if it doesn't exist
@@ -181,6 +190,7 @@ main() {
     deploy_services
     wait_for_services
     run_migrations
+    setup_roles
     create_superuser
     collect_static
     setup_ssl
