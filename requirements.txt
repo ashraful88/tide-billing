@@ -16,7 +16,7 @@ django-filter==24.3
 djangorestframework-simplejwt==5.3.0
 
 # File handling
-Pillow==11.3.0
+Pillow==12.3.0
 whitenoise==6.8.2
 
 # Caching & Async Tasks
