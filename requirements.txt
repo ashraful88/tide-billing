@@ -10,7 +10,7 @@ sqlparse==0.5.5
 psycopg2-binary==2.9.12
 
 # API Framework
-djangorestframework==3.18.0
+djangorestframework==3.18.2
 django-cors-headers==4.9.0
 django-filter==26.1
 
